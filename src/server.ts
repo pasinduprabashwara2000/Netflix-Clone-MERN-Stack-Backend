@@ -2,6 +2,9 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import connectDB from "./config/db";
+import userRoutes from "./routes/UserRoutes";
+import planRoutes from "./routes/PlanRoutes";
+import subscriptionRoutes from "./routes/SubscriptionRoutes";
 
 const app = express();
 
@@ -16,6 +19,10 @@ app.use(express.json({ limit: "1mb" }));
 app.get("/", (_req, res) => {
     res.json({ message: "Netflix Clone API is running" });
 });
+
+app.use("/api/user", userRoutes);
+app.use("/api/plan", planRoutes);
+app.use("/api/subscription", subscriptionRoutes);
 
 const PORT = Number(process.env.PORT) || 5000;
 
