@@ -5,6 +5,10 @@ import connectDB from "./config/db";
 import userRoutes from "./routes/UserRoutes";
 import planRoutes from "./routes/PlanRoutes";
 import subscriptionRoutes from "./routes/SubscriptionRoutes";
+import profileRoutes from "./routes/ProfileRoutes";
+import genreRoutes from "./routes/GenreRoutes";
+import seasonRoutes from "./routes/SeasonRoutes";
+import watchRoutes from "./routes/WatchRoutes";
 
 const app = express();
 
@@ -23,6 +27,10 @@ app.get("/", (_req, res) => {
 app.use("/api/user", userRoutes);
 app.use("/api/plan", planRoutes);
 app.use("/api/subscription", subscriptionRoutes);
+app.use("/api/profile", profileRoutes)
+app.use("/api/genre", genreRoutes)
+app.use("/api/season", seasonRoutes)
+app.use("/api/router", watchRoutes)
 
 const PORT = Number(process.env.PORT) || 5000;
 
