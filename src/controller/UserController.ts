@@ -58,28 +58,6 @@ export const updateUser = async (req: Request, res : Response) => {
     }
 }
 
-//DELETE /api/delete/:id
-export const deleteUser = async (req : Request , res : Response) => {
-    try {
-        const user = await User.findByIdAndDelete(req.params.id)
-
-        if(!user){
-            return res.status(404).json({
-                message : 'User not found'
-            })
-        }
-
-        res.json({
-            message : 'User Deleted Successfully'
-        })
-
-    } catch (error) {
-        res.status(500).json({
-            message : 'Failed to load User : ', error : (error as Error).message
-        })
-    }
-}
-
 //GET /api/user/
 export const getUser = async (req : Request, res : Response) => {
     try {

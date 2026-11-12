@@ -74,3 +74,15 @@ export const deleteEpisode  = async (req: Request, res : Response) => {
         })
     }
 }
+
+//GET /api/episode/
+export const getEpisode = async (req: Request, res: Response) => {
+    try {
+        const episode = await Episode.find().sort({createdAt:-1})
+        return res.json(episode)
+    } catch (error) {
+        res.status(500).json({
+            message : 'Failed to Load Episodes : ',error
+        })
+    }
+}

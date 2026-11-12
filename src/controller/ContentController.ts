@@ -1,24 +1,55 @@
 import {Request, Response} from "express";
+import {isValidObjectId} from "mongoose";
 import Content from "../models/Content";
+import Genre from "../models/Genre";
+import Season from "../models/Season";
+import Episode from "../models/Episode";
 
-//POST /api/content/
+// multipart form values arrive as strings
+const toBool = (v: unknown) => v === true || v === "true"
+
+// uploaded images: req.files = { poster: [file], banner: [file] }
+const getImages = (req: Request) => {
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined
+    return { poster : files?.poster?.[0], banner : files?.banner?.[0] }
+}
+
+//POST /api/content/   (multipart/form-data, images in fields "poster" and "banner")
 export const createContent = async (req: Request, res : Response) => {
     try {
         const {title, description, type, releaseYear, maturityRating,
-               durationMins, posterUrl, bannerUrl, trailer, videoUrl, isFeatured,
-               avgRating} = req.body
+               durationMins, trailer, videoUrl, isFeatured,
+               avgRating, genreId} = req.body
+        const {poster, banner} = getImages(req)
 
         if (!title || !description || !type || releaseYear === undefined || !maturityRating ||
-            !durationMins || !posterUrl || !bannerUrl || !trailer || !videoUrl || isFeatured === undefined
+            !durationMins || !trailer || !videoUrl || isFeatured === undefined
             || !avgRating){
             return res.status(400).json({
                 message : 'All Fields Required'
             })
         }
 
+        if (!poster){
+            return res.status(400).json({
+                message : 'Poster image is required'
+            })
+        }
+
+        if (!banner){
+            return res.status(400).json({
+                message : 'Banner image is required'
+            })
+        }
+
         const content = await Content.create({title, description, type, releaseYear, maturityRating,
-            durationMins, posterUrl, bannerUrl, trailer, videoUrl, isFeatured,
-            avgRating})
+            durationMins, trailer, videoUrl, isFeatured : toBool(isFeatured),
+            avgRating,
+            ...(genreId && {genreId}),
+            posterData : poster.buffer,
+            posterType : poster.mimetype,
+            bannerData : banner.buffer,
+            bannerType : banner.mimetype})
 
         res.status(201).json({
             message : 'Content Created Successfully',
@@ -32,17 +63,33 @@ export const createContent = async (req: Request, res : Response) => {
     }
 }
 
-//PUT /api/content/
+//PUT /api/content/:id   (multipart/form-data, images optional)
 export const updateContent = async (req : Request, res : Response) => {
     try {
         const {title, description, type, releaseYear, maturityRating,
-            durationMins, posterUrl, bannerUrl, trailer, videoUrl, isFeatured,
-            avgRating} = req.body
+            durationMins, trailer, videoUrl, isFeatured,
+            avgRating, genreId} = req.body
+        const {poster, banner} = getImages(req)
+
+        const update: Record<string, unknown> = {title, description, type, releaseYear, maturityRating,
+            durationMins, trailer, videoUrl, avgRating}
+
+        if (isFeatured !== undefined) update.isFeatured = toBool(isFeatured)
+        if (genreId !== undefined) update.genreId = genreId || null
+
+        // only replace an image when a new file was uploaded
+        if (poster){
+            update.posterData = poster.buffer
+            update.posterType = poster.mimetype
+        }
+
+        if (banner){
+            update.bannerData = banner.buffer
+            update.bannerType = banner.mimetype
+        }
 
         const content = await Content.findByIdAndUpdate(req.params.id,
-                        {title, description, type, releaseYear, maturityRating,
-                        durationMins, posterUrl, bannerUrl, trailer, videoUrl, isFeatured,
-                        avgRating},
+                        update,
                         {new : true, runValidators : true})
 
         if (!content){
@@ -85,14 +132,135 @@ export const deleteContent = async (req : Request, res : Response) => {
     }
 }
 
-//GET /api/content/
-export const getContent = async (req : Request, res : Response) => {
+const escapeRegex = (text : string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+//GET /api/content/?search=
+export const getContent = async (req: Request, res : Response) => {
     try {
-        const content = await Content.find().sort({ createdAt : -1 })
+        const {search} = req.query
+        const filter: Record<string, unknown> = {}
+
+        const term = typeof search === 'string' ? search.trim().slice(0, 100) : ''
+
+        if (term){
+            const pattern = new RegExp(escapeRegex(term), 'i')
+            filter.$or = [{ title : pattern }, { description : pattern }]
+        }
+
+        // posterData / bannerData are select:false, so list responses stay small
+        const content = await Content.find(filter).sort({ createdAt : -1 })
+
+        if (term){
+            // title matches first (starts-with, then contains), then description matches; best rated first inside each group
+            const q = term.toLowerCase()
+            const rank = (title : string) => {
+                const t = title.toLowerCase()
+                return t.startsWith(q) ? 0 : t.includes(q) ? 1 : 2
+            }
+            content.sort((a, b) => rank(a.title) - rank(b.title) || b.avgRating - a.avgRating)
+        }
+
         res.json(content)
     } catch (error) {
         res.status(500).json({
             message : 'Failed to Load Contents : ', error
+        })
+    }
+}
+
+//GET /api/content/:id/poster  and  /api/content/:id/banner -> stream the stored image blob
+const sendImage = (kind : 'poster' | 'banner') => async (req : Request, res : Response) => {
+    try {
+        const id = String(req.params.id)
+
+        if (!isValidObjectId(id)){
+            return res.status(400).json({ message : 'Invalid Content Id' })
+        }
+
+        const content = await Content.findById(id).select(`+${kind}Data ${kind}Type`)
+
+        const data = kind === 'poster' ? content?.posterData : content?.bannerData
+        const type = kind === 'poster' ? content?.posterType : content?.bannerType
+
+        if (!data || !type){
+            return res.status(404).json({ message : `${kind === 'poster' ? 'Poster' : 'Banner'} Not Found` })
+        }
+
+        res.set('Content-Type', type)
+        // URL carries ?v=<updatedAt>, so a re-upload gets a fresh URL and this can be cached long-term
+        res.set('Cache-Control', 'public, max-age=31536000, immutable')
+        res.send(data)
+    } catch (error) {
+        res.status(500).json({
+            message : `Failed to Load ${kind} : `, error
+        })
+    }
+}
+
+export const getPoster = sendImage('poster')
+export const getBanner = sendImage('banner')
+
+//GET /api/content/:id/details  -> title + genre + seasons with episodes + similar titles
+export const getContentDetails = async (req : Request, res : Response) => {
+    try {
+        const id = String(req.params.id)
+
+        if (!isValidObjectId(id)){
+            return res.status(400).json({ message : 'Invalid Content Id' })
+        }
+
+        const content = await Content.findById(id)
+
+        if (!content){
+            return res.status(404).json({ message : 'Content Not Found' })
+        }
+
+        const genre = content.genreId ? await Genre.findById(content.genreId).select('name') : null
+
+        // seasons -> episodes (only series have them)
+        const seasons = await Season.find({ contentId : content._id }).sort({ seasonNumber : 1 })
+        const episodes = seasons.length
+            ? await Episode.find({ seasonId : { $in : seasons.map((s) => s._id) } }).sort({ episodeNumber : 1 })
+            : []
+
+        const seasonsOut = seasons.map((s) => ({
+            _id : s._id,
+            seasonNumber : s.seasonNumber,
+            title : s.title,
+            releaseYear : s.releaseYear,
+            episodes : episodes
+                .filter((e) => e.seasonId.equals(s._id))
+                .map((e) => ({
+                    _id : e._id,
+                    episodeNumber : e.episodeNumber,
+                    title : e.title,
+                    description : e.description,
+                    durationMins : e.durationMinis,
+                    videoUrl : e.videoUrl,
+                    thumbnailUrl : e.thumbnailUrl
+                }))
+        }))
+
+        // "More like this": same genre when set, otherwise same type
+        const similarFilter: Record<string, unknown> = { _id : { $ne : content._id }, type : content.type }
+        if (content.genreId) similarFilter.genreId = content.genreId
+
+        let similar = await Content.find(similarFilter).sort({ avgRating : -1 }).limit(12)
+
+        if (similar.length === 0 && content.genreId){
+            similar = await Content.find({ _id : { $ne : content._id }, type : content.type })
+                .sort({ avgRating : -1 }).limit(12)
+        }
+
+        res.json({
+            ...content.toJSON(),
+            genre : genre ? { _id : genre._id, name : genre.name } : null,
+            seasons : seasonsOut,
+            similar : similar.map((c) => c.toJSON())
+        })
+    } catch (error) {
+        res.status(500).json({
+            message : 'Failed to Load Content Details : ', error
         })
     }
 }

@@ -52,29 +52,6 @@ export const updatePlan = async (req : Request, res : Response) => {
     }
 }
 
-//DELETE /api/plan/:id
-export const deletePlan = async (req : Request, res : Response) => {
-    try {
-        const plan = await Plan.findByIdAndDelete(req.params.id)
-
-        if(!plan){
-            return res.status(404).json({
-                message : 'plan not found'
-            })
-        }
-
-        res.json({
-            message : 'Plan Deleted Successfully',
-            data : plan
-        })
-
-    } catch (error) {
-        res.status(500).json({
-            message : 'Failed to Delete Plan : ', error : (error as Error).message
-        })
-    }
-}
-
 //GET /api/plan/id:
 export const getPlan = async (req : Request, res : Response) => {
     try {
