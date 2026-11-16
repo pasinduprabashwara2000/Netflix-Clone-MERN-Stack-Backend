@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "ai:index": "tsx src/scripts/indexAi.ts"
   },
   "keywords": [],
   "type": "commonjs",
@@ -19,6 +20,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.11.1",
     "openai": "^7.57.0",
+    "serverless-http": "^4.0.0",
     "stripe": "^23.1.0"
   },
   "devDependencies": {

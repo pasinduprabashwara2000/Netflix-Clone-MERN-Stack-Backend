@@ -5,7 +5,8 @@ import Plan from "../models/Plan";
 import Stripe from "stripe";
 import {AuthRequest} from "../middleware/AuthMiddleware";
 
-const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173"
+// CLIENT_URL may hold several origins; redirects use the first one
+const CLIENT_URL = (process.env.CLIENT_URL || "http://localhost:5173").split(",")[0].trim().replace(/\/+$/, "")
 
 const getStripe = () => {
     if (!process.env.STRIPE_SECRET_KEY) throw new Error("STRIPE_SECRET_KEY is not configured")
