@@ -1,6 +1,6 @@
 import "dotenv/config";
 import express from "express";
-import cors from "cors";
+import {corsMiddleware} from "./config/cors";
 import userRoutes from "./routes/UserRoutes";
 import planRoutes from "./routes/PlanRoutes";
 import subscriptionRoutes from "./routes/SubscriptionRoutes";
@@ -15,19 +15,9 @@ import aiRoutes from "./routes/AiRoutes";
 
 const app = express();
 
-// CLIENT_URL can hold several origins separated by commas (no trailing slash)
-const allowedOrigins = (process.env.CLIENT_URL || "http://localhost:5173")
-    .split(",")
-    .map((o) => o.trim().replace(/\/+$/, ""))
-    .filter(Boolean);
-
 app.set("trust proxy", 1);
 
-app.use(
-    cors({
-        origin: allowedOrigins,
-    })
-);
+app.use(corsMiddleware);
 
 app.use(express.json({ limit: "1mb" }));
 
