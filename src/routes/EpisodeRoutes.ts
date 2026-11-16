@@ -1,7 +1,7 @@
 import {Router} from "express";
 import {createEpisode, updateEpisode, deleteEpisode, getEpisode} from "../controller/EpisodeController";
 
-const router = new Router();
+const router = Router();
 
 router.post("/", createEpisode)
 router.put("/:id", updateEpisode)

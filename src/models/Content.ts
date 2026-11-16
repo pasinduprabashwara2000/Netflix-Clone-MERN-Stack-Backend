@@ -8,16 +8,14 @@ interface IContent {
     releaseYear : number
     maturityRating : string
     durationMins : string
-    posterUrl? : string
-    posterData? : Buffer
-    posterType? : string
-    bannerUrl? : string
-    bannerData? : Buffer
-    bannerType? : string
+    posterUrl : string
+    bannerUrl : string
     trailer : string
     videoUrl : string
     isFeatured : boolean
     avgRating : number
+    embedding? : number[]
+    embeddingHash? : string
 }
 
 const contentSchema = new Schema<IContent>(
@@ -57,36 +55,14 @@ const contentSchema = new Schema<IContent>(
             required : true
         },
 
-        // legacy / external poster link (used only when no uploaded poster exists)
         posterUrl : {
             type : String,
-            default : ""
+            required : true
         },
 
-        // uploaded poster stored as binary (blob) - never returned in list queries
-        posterData : {
-            type : Buffer,
-            select : false
-        },
-
-        posterType : {
-            type : String
-        },
-
-        // legacy / external banner link (used only when no uploaded banner exists)
         bannerUrl : {
             type : String,
-            default : ""
-        },
-
-        // uploaded banner stored as binary (blob) - never returned in list queries
-        bannerData : {
-            type : Buffer,
-            select : false
-        },
-
-        bannerType : {
-            type : String
+            required : true
         },
 
         trailer : {
@@ -107,33 +83,23 @@ const contentSchema = new Schema<IContent>(
         avgRating : {
             type : Number,
             required : true
+        },
+
+        // AI search / recommendations (hidden from normal queries)
+        embedding : {
+            type : [Number],
+            select : false
+        },
+
+        embeddingHash : {
+            type : String,
+            select : false
         }
 
     },
 
     {
-        timestamps : true,
-        toJSON : {
-            transform : (_doc, ret) => {
-                const r = ret as unknown as Record<string, any>
-                delete r.posterData
-                delete r.bannerData
-
-                // uploaded poster -> point posterUrl at the blob endpoint (?v= busts cache after re-upload)
-                if (r.posterType) {
-                    const v = r.updatedAt ? new Date(r.updatedAt).getTime() : Date.now()
-                    r.posterUrl = `/api/content/${r._id}/poster?v=${v}`
-                }
-                delete r.posterType
-
-                if (r.bannerType) {
-                    const v = r.updatedAt ? new Date(r.updatedAt).getTime() : Date.now()
-                    r.bannerUrl = `/api/content/${r._id}/banner?v=${v}`
-                }
-                delete r.bannerType
-                return r
-            }
-        }
+        timestamps : true
     }
 )
 

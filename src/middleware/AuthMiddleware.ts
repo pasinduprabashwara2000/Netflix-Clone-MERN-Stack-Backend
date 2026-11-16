@@ -35,10 +35,11 @@ export const protect = (req : AuthRequest, res :Response, next : NextFunction) =
             });
         }
 
+        // login signs with the default algorithm (HS256), so verify with HS256
         const decoded = jwt.verify(
             token,
             secret,
-            {algorithms: ["ES256"]}
+            {algorithms: ["HS256"]}
         ) as JwtPayload;
 
         req.user = decoded;

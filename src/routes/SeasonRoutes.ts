@@ -1,7 +1,7 @@
-import Router from 'express'
+import {Router} from "express";
 import {createSeason, updateSeason, deleteSeason, getSeason} from "../controller/SeasonController";
 
-const router = new Router()
+const router = Router()
 
 router.post('/', createSeason)
 router.put('/:id', updateSeason)

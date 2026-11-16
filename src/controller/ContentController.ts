@@ -4,52 +4,30 @@ import Content from "../models/Content";
 import Genre from "../models/Genre";
 import Season from "../models/Season";
 import Episode from "../models/Episode";
+import {invalidateAiCache} from "../services/AiService";
 
-// multipart form values arrive as strings
-const toBool = (v: unknown) => v === true || v === "true"
+const REQUIRED = ['title', 'description', 'type', 'releaseYear', 'maturityRating', 'durationMins',
+    'posterUrl', 'bannerUrl', 'trailer', 'videoUrl', 'isFeatured', 'avgRating'] as const
 
-// uploaded images: req.files = { poster: [file], banner: [file] }
-const getImages = (req: Request) => {
-    const files = req.files as Record<string, Express.Multer.File[]> | undefined
-    return { poster : files?.poster?.[0], banner : files?.banner?.[0] }
-}
+// keep only known fields from the request body
+const pickFields = (body: Record<string, unknown> = {}) =>
+    Object.fromEntries([...REQUIRED, 'genreId'].filter((key) => body[key] !== undefined).map((key) => [key, body[key]]))
 
-//POST /api/content/   (multipart/form-data, images in fields "poster" and "banner")
+//POST /api/content/   (JSON body, posterUrl and bannerUrl are plain image links)
 export const createContent = async (req: Request, res : Response) => {
     try {
-        const {title, description, type, releaseYear, maturityRating,
-               durationMins, trailer, videoUrl, isFeatured,
-               avgRating, genreId} = req.body
-        const {poster, banner} = getImages(req)
+        const data = pickFields(req.body)
 
-        if (!title || !description || !type || releaseYear === undefined || !maturityRating ||
-            !durationMins || !trailer || !videoUrl || isFeatured === undefined
-            || !avgRating){
+        if (REQUIRED.some((key) => data[key] === undefined || data[key] === '')){
             return res.status(400).json({
                 message : 'All Fields Required'
             })
         }
 
-        if (!poster){
-            return res.status(400).json({
-                message : 'Poster image is required'
-            })
-        }
+        if (!data.genreId) delete data.genreId
 
-        if (!banner){
-            return res.status(400).json({
-                message : 'Banner image is required'
-            })
-        }
-
-        const content = await Content.create({title, description, type, releaseYear, maturityRating,
-            durationMins, trailer, videoUrl, isFeatured : toBool(isFeatured),
-            avgRating,
-            ...(genreId && {genreId}),
-            posterData : poster.buffer,
-            posterType : poster.mimetype,
-            bannerData : banner.buffer,
-            bannerType : banner.mimetype})
+        const content = await Content.create(data)
+        invalidateAiCache()
 
         res.status(201).json({
             message : 'Content Created Successfully',
@@ -58,45 +36,32 @@ export const createContent = async (req: Request, res : Response) => {
 
     } catch (error) {
         res.status(500).json({
-            message : 'Failed to Create Content : ', error
+            message : 'Failed to Create Content : ', error : (error as Error).message
         })
     }
 }
 
-//PUT /api/content/:id   (multipart/form-data, images optional)
+//PUT /api/content/:id
 export const updateContent = async (req : Request, res : Response) => {
     try {
-        const {title, description, type, releaseYear, maturityRating,
-            durationMins, trailer, videoUrl, isFeatured,
-            avgRating, genreId} = req.body
-        const {poster, banner} = getImages(req)
+        const id = String(req.params.id)
 
-        const update: Record<string, unknown> = {title, description, type, releaseYear, maturityRating,
-            durationMins, trailer, videoUrl, avgRating}
-
-        if (isFeatured !== undefined) update.isFeatured = toBool(isFeatured)
-        if (genreId !== undefined) update.genreId = genreId || null
-
-        // only replace an image when a new file was uploaded
-        if (poster){
-            update.posterData = poster.buffer
-            update.posterType = poster.mimetype
+        if (!isValidObjectId(id)){
+            return res.status(400).json({ message : 'Invalid Content Id' })
         }
 
-        if (banner){
-            update.bannerData = banner.buffer
-            update.bannerType = banner.mimetype
-        }
+        const data = pickFields(req.body)
+        if ('genreId' in data) data.genreId = data.genreId || null
 
-        const content = await Content.findByIdAndUpdate(req.params.id,
-                        update,
-                        {new : true, runValidators : true})
+        const content = await Content.findByIdAndUpdate(id, data, {new : true, runValidators : true})
 
         if (!content){
             return res.status(404).json({
                 message : 'Content Not Found'
             })
         }
+
+        invalidateAiCache()
 
         res.json({
             message : 'Content Updated Successfully',
@@ -105,7 +70,7 @@ export const updateContent = async (req : Request, res : Response) => {
 
     } catch (error) {
         res.status(500).json({
-            message : 'Failed to update content : ', error
+            message : 'Failed to update content : ', error : (error as Error).message
         })
     }
 }
@@ -121,13 +86,15 @@ export const deleteContent = async (req : Request, res : Response) => {
             })
         }
 
+        invalidateAiCache()
+
         res.json({
             message : 'Content Deleted Successfully'
         })
 
     } catch (error) {
         res.status(500).json({
-            message : 'Failed to Delete Content : ', error
+            message : 'Failed to Delete Content : ', error : (error as Error).message
         })
     }
 }
@@ -147,7 +114,6 @@ export const getContent = async (req: Request, res : Response) => {
             filter.$or = [{ title : pattern }, { description : pattern }]
         }
 
-        // posterData / bannerData are select:false, so list responses stay small
         const content = await Content.find(filter).sort({ createdAt : -1 })
 
         if (term){
@@ -167,38 +133,6 @@ export const getContent = async (req: Request, res : Response) => {
         })
     }
 }
-
-//GET /api/content/:id/poster  and  /api/content/:id/banner -> stream the stored image blob
-const sendImage = (kind : 'poster' | 'banner') => async (req : Request, res : Response) => {
-    try {
-        const id = String(req.params.id)
-
-        if (!isValidObjectId(id)){
-            return res.status(400).json({ message : 'Invalid Content Id' })
-        }
-
-        const content = await Content.findById(id).select(`+${kind}Data ${kind}Type`)
-
-        const data = kind === 'poster' ? content?.posterData : content?.bannerData
-        const type = kind === 'poster' ? content?.posterType : content?.bannerType
-
-        if (!data || !type){
-            return res.status(404).json({ message : `${kind === 'poster' ? 'Poster' : 'Banner'} Not Found` })
-        }
-
-        res.set('Content-Type', type)
-        // URL carries ?v=<updatedAt>, so a re-upload gets a fresh URL and this can be cached long-term
-        res.set('Cache-Control', 'public, max-age=31536000, immutable')
-        res.send(data)
-    } catch (error) {
-        res.status(500).json({
-            message : `Failed to Load ${kind} : `, error
-        })
-    }
-}
-
-export const getPoster = sendImage('poster')
-export const getBanner = sendImage('banner')
 
 //GET /api/content/:id/details  -> title + genre + seasons with episodes + similar titles
 export const getContentDetails = async (req : Request, res : Response) => {
