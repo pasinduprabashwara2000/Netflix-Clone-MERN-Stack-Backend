@@ -4,6 +4,7 @@ import Profile from "../models/Profile";
 import User from "../models/User";
 import {AuthRequest} from "../middleware/AuthMiddleware";
 import {toAiError, recommend, semanticSearch, chat, reindexAll, ChatTurn} from "../services/AiService";
+import {getInsights as loadInsights, summarize} from "../services/AiInsightsService";
 
 const isId = (v : unknown) : v is string => typeof v === "string" && Types.ObjectId.isValid(v)
 
@@ -102,12 +103,31 @@ export const aiChat = async (req : AuthRequest, res : Response) => {
     }
 }
 
+const isAdmin = async (userId : string) => {
+    const user = await User.findById(userId).select("role")
+    return user?.role === "Admin"
+}
+
+//GET /api/ai/insights[?summary=1]   (admin only: watch analytics + optional AI summary)
+export const getInsights = async (req : AuthRequest, res : Response) => {
+    try {
+        if (!(await isAdmin(req.user!.id))) {
+            return res.status(403).json({ message : "Admin only" })
+        }
+
+        const insights = await loadInsights()
+        const summary = req.query.summary === "1" ? await summarize(insights) : undefined
+
+        res.json({ ...insights, summary })
+    } catch (error) {
+        fail(res, error)
+    }
+}
+
 //POST /api/ai/reindex   (admin only: rebuild every title's embedding)
 export const reindex = async (req : AuthRequest, res : Response) => {
     try {
-        const user = await User.findById(req.user!.id).select("role")
-
-        if (user?.role !== "Admin") {
+        if (!(await isAdmin(req.user!.id))) {
             return res.status(403).json({ message : "Admin only" })
         }
 

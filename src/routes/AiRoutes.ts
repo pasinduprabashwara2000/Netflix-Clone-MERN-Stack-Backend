@@ -1,5 +1,5 @@
 import {Router} from "express";
-import {getRecommendations, aiSearch, aiChat, reindex} from "../controller/AiController";
+import {getRecommendations, aiSearch, aiChat, reindex, getInsights} from "../controller/AiController";
 import {protect} from "../middleware/AuthMiddleware";
 import {rateLimit} from "../middleware/RateLimit";
 
@@ -11,6 +11,7 @@ router.use(protect, rateLimit(30, 60 * 1000))
 router.get("/recommendations", getRecommendations)
 router.get("/search", aiSearch)
 router.post("/chat", aiChat)
+router.get("/insights", getInsights)
 router.post("/reindex", reindex)
 
 export default router
